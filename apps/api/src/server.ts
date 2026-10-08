@@ -1,6 +1,12 @@
 import { app } from './app';
 import { env } from './config/env';
 import { closeRedisConnection } from './config/redis';
+import { startSubmissionWorker, closeSubmissionWorker } from './queue/submissionWorker';
+import { closeSubmissionQueue } from './queue/submissionQueue';
+
+// Start the background BullMQ worker
+startSubmissionWorker();
+console.log(`[Worker] Submission worker started with BullMQ`);
 
 const server = app.listen(env.PORT, () => {
   console.log(`[Server] Webform API running in ${env.NODE_ENV} mode on port ${env.PORT}`);
@@ -11,6 +17,8 @@ const handleShutdown = async (signal: string) => {
   console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
   server.close(async () => {
     try {
+      await closeSubmissionWorker();
+      await closeSubmissionQueue();
       await closeRedisConnection();
       console.log('[Server] Connections closed. Exiting process.');
       process.exit(0);

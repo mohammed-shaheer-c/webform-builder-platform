@@ -4,6 +4,28 @@ import { env } from './env';
 let redisInstance: Redis | null = null;
 
 /**
+ * Returns connection options formatted for BullMQ and Redis clients.
+ */
+export function getRedisConnectionOptions() {
+  try {
+    const parsed = new URL(env.REDIS_URL);
+    return {
+      host: parsed.hostname || 'localhost',
+      port: Number(parsed.port || 6379),
+      password: parsed.password || undefined,
+      username: parsed.username || undefined,
+      maxRetriesPerRequest: null,
+    };
+  } catch {
+    return {
+      host: 'localhost',
+      port: 6379,
+      maxRetriesPerRequest: null,
+    };
+  }
+}
+
+/**
  * Returns a singleton Redis client instance.
  * Configured with lazyConnect to prevent connection blocking on startup.
  */

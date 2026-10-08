@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { tenantMiddleware } from '../middleware/tenant';
 import { validateBody } from '../middleware/validate';
@@ -320,6 +321,78 @@ router.get(
       });
 
       res.status(200).json(versions);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/forms/:id/submissions
+ * Retrieves paginated submissions for a specific form.
+ * Enforces strict tenant ownership and a maximum page size of 100.
+ */
+router.get(
+  '/:id/submissions',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const tenantId = req.tenantId;
+      const { id } = req.params;
+
+      // Verify that the form belongs to the current development tenant
+      const form = await prisma.form.findFirst({
+        where: { id, tenantId },
+      });
+
+      if (!form) {
+        res.status(404).json({
+          error: {
+            message: 'Form not found',
+          },
+        });
+        return;
+      }
+
+      // Parse pagination & filter query parameters
+      const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      const rawLimit = parseInt(req.query.limit as string, 10) || 50;
+      const limit = Math.min(Math.max(1, rawLimit), 100); // Enforce max page size of 100
+      const sort = req.query.sort === 'asc' ? 'asc' : 'desc';
+
+      const from = req.query.from ? new Date(req.query.from as string) : undefined;
+      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+
+      const where: Prisma.SubmissionWhereInput = {
+        formId: form.id,
+        tenantId,
+      };
+
+      if (from || to) {
+        where.createdAt = {};
+        if (from && !isNaN(from.getTime())) {
+          where.createdAt.gte = from;
+        }
+        if (to && !isNaN(to.getTime())) {
+          where.createdAt.lte = to;
+        }
+      }
+
+      const [total, items] = await Promise.all([
+        prisma.submission.count({ where }),
+        prisma.submission.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: sort },
+        }),
+      ]);
+
+      res.status(200).json({
+        items,
+        page,
+        limit,
+        total,
+      });
     } catch (error) {
       next(error);
     }

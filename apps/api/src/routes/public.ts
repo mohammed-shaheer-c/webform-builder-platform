@@ -1,9 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
+import crypto from 'crypto';
 import { prisma } from '../config/prisma';
 import { validateBody } from '../middleware/validate';
+import { formSubmissionRateLimiter } from '../middleware/rateLimiter';
 import { PublicSubmissionSchema, FormSchema } from '../schemas/form.schema';
 import { validateSubmissionData } from '../services/submissionValidator';
+import { addSubmissionJob } from '../queue/submissionQueue';
 
 const router = Router();
 
@@ -69,11 +71,13 @@ router.get(
 
 /**
  * POST /api/public/forms/:formId/submissions
- * Public submission endpoint with authoritative server-side validation.
- * Binds submission to the exact published form version used.
+ * Asynchronous public submission endpoint protected by BullMQ and rate limiting.
+ * Validates authoritatively against published schema, creates a durable queue job,
+ * and returns 202 Accepted.
  */
 router.post(
   '/forms/:formId/submissions',
+  formSubmissionRateLimiter,
   validateBody(PublicSubmissionSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -127,22 +131,27 @@ router.post(
         return;
       }
 
-      // Store submission directly in PostgreSQL referencing the exact published version
-      const submission = await prisma.submission.create({
-        data: {
-          tenantId: form.tenantId,
-          formId: form.id,
-          formVersionId: publishedVersion.id,
-          data: validation.cleanedData as Prisma.InputJsonValue,
-        },
+      // Generate submission ID prior to queuing to act as idempotency key & database primary key
+      const submissionId = crypto.randomUUID();
+      const submittedAt = new Date().toISOString();
+
+      // Enqueue submission job to BullMQ
+      await addSubmissionJob({
+        submissionId,
+        tenantId: form.tenantId,
+        formId: form.id,
+        formVersionId: publishedVersion.id,
+        data: validation.cleanedData,
+        submittedAt,
       });
 
-      res.status(201).json({
-        id: submission.id,
-        formId: submission.formId,
-        formVersionId: submission.formVersionId,
-        createdAt: submission.createdAt,
-        message: 'Submission received successfully',
+      // Return 202 Accepted response
+      res.status(202).json({
+        id: submissionId,
+        status: 'accepted',
+        formId: form.id,
+        formVersionId: publishedVersion.id,
+        message: 'Submission accepted for asynchronous processing',
       });
     } catch (error) {
       next(error);
