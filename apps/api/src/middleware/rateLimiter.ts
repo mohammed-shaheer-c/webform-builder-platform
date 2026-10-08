@@ -15,7 +15,11 @@ export const generalRateLimiter = rateLimit({
       message: 'Too many requests from this IP, please try again later.',
     },
   },
-  skip: () => process.env.NODE_ENV === 'test', // Skip in automated test environment
+  skip: (req: Request) => {
+    if (process.env.NODE_ENV === 'test') return true;
+    if (process.env.NODE_ENV !== 'production' && req.headers['x-load-test'] === 'true') return true;
+    return false;
+  },
 });
 
 /**
@@ -38,5 +42,9 @@ export const formSubmissionRateLimiter = rateLimit({
       message: 'Too many submissions for this form. Please wait a moment before trying again.',
     },
   },
-  skip: () => process.env.NODE_ENV === 'test', // Skip in automated test environment
+  skip: (req: Request) => {
+    if (process.env.NODE_ENV === 'test') return true;
+    if (process.env.NODE_ENV !== 'production' && req.headers['x-load-test'] === 'true') return true;
+    return false;
+  },
 });

@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "rimraf dist && tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run src",
+    "test": "vitest run src --fileParallelism=false",
     "start": "node dist/server.js"
   },
   "dependencies": {

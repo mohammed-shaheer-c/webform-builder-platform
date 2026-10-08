@@ -9,6 +9,7 @@ export const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/public/forms/:formId" element={<PublicFormPage />} />
+        <Route path="/forms/:formId" element={<PublicFormPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

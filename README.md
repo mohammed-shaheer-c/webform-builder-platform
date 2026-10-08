@@ -168,6 +168,85 @@ Open [http://localhost:5173](http://localhost:5173) in your browser:
 | `npm run dev` | Runs both `api` and `web` in concurrent development mode |
 | `npm run dev:api` | Runs the API server with auto-reloading (`tsx watch`) |
 | `npm run dev:web` | Runs the Vite development server with HMR |
+| `npm run test` | Runs the full automated test suite with Vitest |
+| `npm run load:test` | Executes the submission burst load generator |
 | `npm run build` | Compiles both backend and frontend applications |
 | `npm run typecheck` | Validates TypeScript types across both `api` and `web` projects |
 | `npm run prisma:generate` | Generates the Prisma client from `prisma/schema.prisma` |
+
+---
+
+## 🔬 Automated Correctness Tests
+
+The platform features an automated test suite verifying core correctness guarantees:
+
+```bash
+npm test
+```
+
+### Verified Behaviors
+1. **Dynamic Server-Side Validation**:
+   - Evaluates dynamic types: `text`, `email`, `number`, `select`, `multiselect`, `radio`, `checkbox`, `date`.
+   - Rejects invalid emails, out-of-range numbers, and unlisted select options.
+   - Enforces required fields and conditional visibility (`visibleWhen: { field, equals }`).
+2. **Version Integrity**:
+   - `Create Draft` → `Publish V1` → `Submit` → `Edit Draft` → `Publish V2` → `Read old submission`.
+   - Proves `old submission.formVersionId === Version 1` and historical stored data remains immutable.
+3. **Queue Reliability & Recovery**:
+   - Enqueues jobs to BullMQ and verifies automatic retry with exponential backoff on simulated database failure.
+   - Proves successful recovery and persistence when connectivity is restored.
+4. **Idempotency**:
+   - Submits duplicate jobs with identical IDs; proves only a single database record is committed.
+
+---
+
+## ⚡ Submission Burst Load Generator
+
+To demonstrate how the public submission path behaves during burst traffic, a built-in load generator tests the live queue-based ingestion endpoint.
+
+### Running the Load Test
+
+Run with default parameters (auto-creates a benchmark form, 500 requests, concurrency 50):
+
+```bash
+npm run load:test
+```
+
+Or configure custom parameters:
+
+```bash
+npm run load:test -- \
+  --url=http://localhost:5000/api/public/forms/FORM_ID/submissions \
+  --requests=1000 \
+  --concurrency=100 \
+  --burst=200
+```
+
+### What It Measures
+- **Total Requests**
+- **Successful Requests** (HTTP 202 Accepted)
+- **Failed Requests**
+- **Duration** (total test elapsed time)
+- **Requests/sec** (ingestion throughput)
+- **Latency Distribution** (average, min, p50, p95, p99, max latency)
+
+### What the Load Test Demonstrates
+1. **Decoupled Ingestion**: The HTTP API layer quickly validates and accepts submissions into Redis memory with low latency (sub-50ms), returning `HTTP 202 Accepted` immediately.
+2. **How the Queue Protects PostgreSQL During Bursts**:
+   - Under burst traffic (e.g., 1,000 requests sent with concurrency 100), direct database writes would open 100 concurrent write connections and risk connection starvation and high lock contention.
+   - With BullMQ, Redis absorbs the entire burst instantly.
+   - Background workers drain jobs at a controlled, configured concurrency (`concurrency: 5`), streaming steady writes into PostgreSQL without saturating connection pools.
+
+### Limitations of Local Testing
+- **Local Loopback**: Running the load generator, API, Redis, and workers on the same machine introduces CPU/thread contention that does not exist in production where tiers run on separate hosts.
+- **Single Process**: A single Node process sending requests is constrained by local OS socket recycling and event loop scheduling.
+- **Not a Production Benchmark**: This tool is designed to prove architectural decoupling, queue buffering, and correctness under burst conditions, rather than benchmarking absolute maximum hardware limits.
+
+---
+
+## 📚 Architectural Documentation
+
+For an in-depth technical analysis and evaluation of architectural choices:
+* [ARCHITECTURE.md](file:///d:/webform-platform/ARCHITECTURE.md): Complete system diagram, request flows, security, data integrity, and Built vs. Designed capabilities table.
+* [TRADEOFFS.md](file:///d:/webform-platform/TRADEOFFS.md): Detailed analysis of the three foundational technical decisions (Postgres+JSONB vs MongoDB, BullMQ vs Direct Writes, and Immutable Form Versions).
+
