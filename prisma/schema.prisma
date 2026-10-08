@@ -9,3 +9,66 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum FormVersionStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  forms       Form[]
+  submissions Submission[]
+}
+
+model Form {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions    FormVersion[]
+  submissions Submission[]
+
+  @@index([tenantId])
+}
+
+model FormVersion {
+  id          String            @id @default(uuid())
+  formId      String
+  version     Int
+  status      FormVersionStatus @default(DRAFT)
+  schema      Json
+  createdAt   DateTime          @default(now())
+  publishedAt DateTime?
+
+  form        Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@unique([formId, version])
+  @@index([formId])
+}
+
+model Submission {
+  id            String   @id @default(uuid())
+  tenantId      String
+  formId        String
+  formVersionId String
+  data          Json
+  createdAt     DateTime @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  form        Form        @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion FormVersion @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([formId])
+  @@index([formVersionId])
+  @@index([createdAt])
+}
