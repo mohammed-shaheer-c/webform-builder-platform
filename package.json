@@ -11,11 +11,15 @@
     "dev:web": "npm run dev --workspace=web",
     "build": "npm run build --workspace=api && npm run build --workspace=web",
     "typecheck": "npm run typecheck --workspace=api && npm run typecheck --workspace=web",
+    "test": "npm run test --workspace=api",
     "prisma:generate": "prisma generate"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "prisma": "^6.4.1",
     "typescript": "^5.7.3"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.28.2"
   }
 }
