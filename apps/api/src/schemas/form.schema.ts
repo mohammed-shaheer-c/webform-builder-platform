@@ -21,6 +21,13 @@ export const FieldOptionSchema = z.union([
   }),
 ]);
 
+export const ConditionalVisibilitySchema = z.object({
+  field: z.string().min(1, 'Target field ID is required'),
+  equals: z.any(),
+});
+
+export type ConditionalVisibility = z.infer<typeof ConditionalVisibilitySchema>;
+
 export const FormFieldSchema = z
   .object({
     id: z
@@ -39,6 +46,7 @@ export const FormFieldSchema = z
     description: z.string().optional(),
     options: z.array(FieldOptionSchema).optional(),
     defaultValue: z.any().optional(),
+    visibleWhen: ConditionalVisibilitySchema.optional(),
   })
   .superRefine((field, ctx) => {
     // If field type requires options (select, multiselect, radio), ensure options are provided and not empty
@@ -51,7 +59,18 @@ export const FormFieldSchema = z
         });
       }
     }
+
+    // Prevent self-referencing conditional visibility
+    if (field.visibleWhen && field.visibleWhen.field === field.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A field cannot have conditional visibility depending on itself',
+        path: ['visibleWhen', 'field'],
+      });
+    }
   });
+
+export type FormField = z.infer<typeof FormFieldSchema>;
 
 export const FormSchemaDefinition = z
   .object({
@@ -62,7 +81,6 @@ export const FormSchemaDefinition = z
       .min(1, 'Form schema must contain at least one field'),
   })
   .superRefine((schema, ctx) => {
-    // Ensure unique field IDs across the schema
     const seenIds = new Set<string>();
     schema.fields.forEach((field, index) => {
       if (seenIds.has(field.id)) {
@@ -74,7 +92,20 @@ export const FormSchemaDefinition = z
       }
       seenIds.add(field.id);
     });
+
+    // Verify that conditional visibility targets refer to existing fields in the schema
+    schema.fields.forEach((field, index) => {
+      if (field.visibleWhen && !seenIds.has(field.visibleWhen.field)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Conditional visibility references unknown field "${field.visibleWhen.field}"`,
+          path: ['fields', index, 'visibleWhen', 'field'],
+        });
+      }
+    });
   });
+
+export type FormSchema = z.infer<typeof FormSchemaDefinition>;
 
 export const CreateFormSchema = z.object({
   name: z
@@ -86,3 +117,18 @@ export const CreateFormSchema = z.object({
 });
 
 export type CreateFormInput = z.infer<typeof CreateFormSchema>;
+
+export const UpdateDraftSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  schema: FormSchemaDefinition,
+});
+
+export type UpdateDraftInput = z.infer<typeof UpdateDraftSchema>;
+
+export const PublicSubmissionSchema = z.object({
+  data: z.record(z.any(), {
+    required_error: 'Submission data object is required',
+  }),
+});
+
+export type PublicSubmissionInput = z.infer<typeof PublicSubmissionSchema>;
